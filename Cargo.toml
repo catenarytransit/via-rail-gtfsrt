@@ -1,6 +1,6 @@
 [package]
 name = "via-rail-gtfsrt"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Converts Via Rail train tracker to a Vehicle and trip GTFS Realtime feed"
 license = "AGPL-3.0"

@@ -119,7 +119,7 @@ pub async fn get_via_rail_gtfs_rt() -> Result<FeedMessage, Box<dyn Error + Sync 
                     let torono_time_of_start =
                         first_time.with_timezone(&chrono_tz::America::Toronto);
 
-                    let start_date_gtfs_rt = format!("{}", torono_time_of_start.format("%Y%m%d%m"));
+                    let start_date_gtfs_rt = format!("{}", torono_time_of_start.format("%Y%m%d"));
 
                     let trip_short_name: &str = id.split(' ').collect::<Vec<&str>>()[0];
 
@@ -189,7 +189,7 @@ pub async fn get_via_rail_gtfs_rt() -> Result<FeedMessage, Box<dyn Error + Sync 
                                 modified_trip: None,
                             };
 
-                            println!("{}: {:#?}", id, obj);
+                            //println!("{}: {:#?}", id, obj);
 
                             Some(FeedEntity {
                                 id,
