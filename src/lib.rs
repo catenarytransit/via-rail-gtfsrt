@@ -150,6 +150,7 @@ pub async fn get_via_rail_gtfs_rt() -> Result<FeedMessage, Box<dyn Error + Sync 
                                                     ),
                                                     uncertainty: None,
                                                     delay: None,
+                                                    scheduled_time: None,
                                                 }
                                             })
                                         })
@@ -169,6 +170,7 @@ pub async fn get_via_rail_gtfs_rt() -> Result<FeedMessage, Box<dyn Error + Sync 
                                                     ),
                                                     uncertainty: None,
                                                     delay: None,
+                                                    scheduled_time: None,
                                                 }
                                             })
                                         })
@@ -257,6 +259,7 @@ pub async fn get_via_rail_gtfs_rt() -> Result<FeedMessage, Box<dyn Error + Sync 
                     .expect("Time went backwards")
                     .as_secs(),
             ),
+            feed_version: None,
         },
     })
 }
