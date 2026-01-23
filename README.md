@@ -1,6 +1,10 @@
 # Via Rail GTFS RT
 
-Raw data from here: https://tsimobile.viarail.ca/
+This crate takes input data which originates here: https://tsimobile.viarail.ca/ and the current Via Rail GTFS schedule, and produces a GTFS feed.
 
-todo: scrape alerts page in English and French, match with routes
-https://www.viarail.ca/fr/planifier/etat-du-service
+The author of this crate is Kyler Chin <kyler@catenarymaps.org> of Catenary Maps.
+
+Features:
+  - Vehicle positions
+  - Trip updates
+  - Alerts (French and English)
