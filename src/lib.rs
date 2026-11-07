@@ -1,9 +1,12 @@
-use chrono::Timelike;
-use gtfs_realtime::trip_update::StopTimeEvent;
-use gtfs_realtime::trip_update::StopTimeUpdate;
+mod timezone;
 use gtfs_realtime::FeedHeader;
 use gtfs_realtime::FeedMessage;
-use gtfs_realtime::{Alert, EntitySelector, FeedEntity, Position, TranslatedString, TripUpdate, VehiclePosition};
+use gtfs_realtime::trip_update::StopTimeEvent;
+use gtfs_realtime::trip_update::StopTimeUpdate;
+use gtfs_realtime::{
+    Alert, EntitySelector, FeedEntity, Position, TranslatedString, TripUpdate, VehiclePosition,
+};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
@@ -82,18 +85,24 @@ struct TripCandidate<'a> {
 /// Returns (trip_id, route_id, start_date, time_difference_in_seconds).
 fn find_best_trip_match<'a>(
     candidates: &[TripCandidate<'a>],
-    rt_first_scheduled_time: &chrono::DateTime<chrono::FixedOffset>,
+    rt_first_scheduled_time: &Timestamp,
     print_debug: bool,
     trip_short_name: &str,
 ) -> Option<(&'a str, &'a str, String, i64)> {
-    let rt_local = rt_first_scheduled_time.with_timezone(&chrono_tz::America::Toronto);
-    let rt_date = rt_local.date_naive();
-    let rt_seconds_from_midnight = rt_local.time().num_seconds_from_midnight();
+    let rt_local = rt_first_scheduled_time.to_zoned(timezone::get("America/Toronto"));
+    let rt_date = rt_local.date();
+    let rt_seconds_from_midnight = i64::from(rt_local.hour()) * 3600
+        + i64::from(rt_local.minute()) * 60
+        + i64::from(rt_local.second());
 
     let mut best_match: Option<(&str, &str, String, i64)> = None;
 
     for candidate in candidates {
-        let first_departure = candidate.trip.stop_times.first().and_then(|st| st.departure_time);
+        let first_departure = candidate
+            .trip
+            .stop_times
+            .first()
+            .and_then(|st| st.departure_time);
 
         if let Some(gtfs_departure_seconds) = first_departure {
             let diff = (rt_seconds_from_midnight as i64 - gtfs_departure_seconds as i64).abs();
@@ -115,7 +124,7 @@ fn find_best_trip_match<'a>(
             };
 
             if is_better {
-                let start_date = format!("{}", rt_date.format("%Y%m%d"));
+                let start_date = format!("{}", rt_date.strftime("%Y%m%d"));
                 best_match = Some((candidate.trip_id, candidate.route_id, start_date, diff));
             }
         }
@@ -175,7 +184,9 @@ async fn get_via_rail_gtfs_rt_internal(
         .stops
         .values()
         .filter_map(|stop| {
-            stop.code.as_ref().map(|code| (code.as_str(), stop.id.as_str()))
+            stop.code
+                .as_ref()
+                .map(|code| (code.as_str(), stop.id.as_str()))
         })
         .collect();
 
@@ -204,19 +215,15 @@ async fn get_via_rail_gtfs_rt_internal(
 
     for (id, obj) in via_traintable.into_iter() {
         // Find the first valid scheduled time from departure
-        let first_scheduled = obj.times.iter()
-            .find_map(|stop| {
-                stop.departure.as_ref()
-                    .and_then(|dep| dep.scheduled.as_ref())
-                    .filter(|s| !s.contains("mdash") && !s.is_empty())
-                    .or_else(|| {
-                        Some(&stop.scheduled).filter(|s| !s.contains("mdash") && !s.is_empty())
-                    })
-            });
-
-        let first_time = first_scheduled.and_then(|s| {
-            chrono::DateTime::parse_from_rfc3339(s).ok()
+        let first_scheduled = obj.times.iter().find_map(|stop| {
+            stop.departure
+                .as_ref()
+                .and_then(|dep| dep.scheduled.as_ref())
+                .filter(|s| !s.contains("mdash") && !s.is_empty())
+                .or_else(|| Some(&stop.scheduled).filter(|s| !s.contains("mdash") && !s.is_empty()))
         });
+
+        let first_time = first_scheduled.and_then(|s| s.parse::<Timestamp>().ok());
 
         let first_time = match first_time {
             Some(t) => t,
@@ -251,39 +258,38 @@ async fn get_via_rail_gtfs_rt_internal(
                 stop_id: stops_code_to_id
                     .get(via_stop_time.code.as_str())
                     .map(|s| s.to_string()),
-                arrival: via_stop_time
-                    .arrival
-                    .as_ref()
-                    .and_then(|arrival| {
-                        arrival.estimated.as_ref().and_then(|estimate_time| {
-                            chrono::DateTime::parse_from_rfc3339(estimate_time.as_str())
-                                .ok()
-                                .map(|dt| StopTimeEvent {
-                                    time: Some(dt.timestamp()),
-                                    uncertainty: None,
-                                    delay: None,
-                                    scheduled_time: None,
-                                })
-                        })
-                    }),
-                departure: via_stop_time
-                    .departure
-                    .as_ref()
-                    .and_then(|departure| {
-                        departure.estimated.as_ref().and_then(|estimate_time| {
-                            chrono::DateTime::parse_from_rfc3339(estimate_time.as_str())
-                                .ok()
-                                .map(|dt| StopTimeEvent {
-                                    time: Some(dt.timestamp()),
-                                    uncertainty: None,
-                                    delay: None,
-                                    scheduled_time: None,
-                                })
-                        })
-                    }),
+                arrival: via_stop_time.arrival.as_ref().and_then(|arrival| {
+                    arrival.estimated.as_ref().and_then(|estimate_time| {
+                        estimate_time
+                            .parse::<Timestamp>()
+                            .ok()
+                            .map(|dt| StopTimeEvent {
+                                time: Some(dt.as_second()),
+                                uncertainty: None,
+                                delay: None,
+                                scheduled_time: None,
+                            })
+                    })
+                }),
+                departure: via_stop_time.departure.as_ref().and_then(|departure| {
+                    departure.estimated.as_ref().and_then(|estimate_time| {
+                        estimate_time
+                            .parse::<Timestamp>()
+                            .ok()
+                            .map(|dt| StopTimeEvent {
+                                time: Some(dt.as_second()),
+                                uncertainty: None,
+                                delay: None,
+                                scheduled_time: None,
+                            })
+                    })
+                }),
                 departure_occupancy_status: None,
                 schedule_relationship: if via_stop_time.cancelled {
-                    Some(gtfs_realtime::trip_update::stop_time_update::ScheduleRelationship::Skipped as i32)
+                    Some(
+                        gtfs_realtime::trip_update::stop_time_update::ScheduleRelationship::Skipped
+                            as i32,
+                    )
                 } else {
                     None
                 },
@@ -322,7 +328,7 @@ async fn get_via_rail_gtfs_rt_internal(
 
         // Vehicle position entity
         if let Some(ref poll) = obj.poll {
-            if let Ok(poll_dt) = chrono::DateTime::parse_from_rfc3339(poll.as_str()) {
+            if let Ok(poll_dt) = poll.parse::<Timestamp>() {
                 vehicle_positions.push(FeedEntity {
                     id: format!("{}-vp", id),
                     is_deleted: None,
@@ -347,7 +353,7 @@ async fn get_via_rail_gtfs_rt_internal(
                         multi_carriage_details: vec![],
                         stop_id: None,
                         current_status: None,
-                        timestamp: Some(poll_dt.timestamp() as u64),
+                        timestamp: Some(poll_dt.as_second() as u64),
                     }),
                     alert: None,
                     shape: None,
@@ -379,8 +385,12 @@ async fn get_via_rail_gtfs_rt_internal(
                     cause: None,
                     effect: None,
                     url: Some(convert_localized_text_to_translated_string(&via_alert.url)),
-                    header_text: Some(convert_localized_text_to_translated_string(&via_alert.header)),
-                    description_text: Some(convert_localized_text_to_translated_string(&via_alert.description)),
+                    header_text: Some(convert_localized_text_to_translated_string(
+                        &via_alert.header,
+                    )),
+                    description_text: Some(convert_localized_text_to_translated_string(
+                        &via_alert.description,
+                    )),
                     tts_header_text: None,
                     tts_description_text: None,
                     severity_level: None,
@@ -431,7 +441,7 @@ mod tests {
     #[tokio::test]
     async fn it_works() {
         let gtfs = gtfs_structures::Gtfs::from_url_async(
-            "https://www.viarail.ca/sites/all/files/gtfs/viarail.zip"
+            "https://www.viarail.ca/sites/all/files/gtfs/viarail.zip",
         )
         .await
         .expect("Failed to load VIA Rail GTFS");
@@ -500,5 +510,29 @@ mod tests {
         let stop_6 = &train_6.times[0];
         assert_eq!(stop_6.code, "CASS");
         assert!(!stop_6.cancelled, "Train 6 stop should NOT be cancelled");
+    }
+}
+
+#[cfg(test)]
+mod jiff_regressions {
+    use super::*;
+    #[test]
+    fn matches_using_toronto_service_date_before_utc_midnight() {
+        let trip = gtfs_structures::Trip {
+            stop_times: vec![gtfs_structures::StopTime {
+                departure_time: Some(23 * 3600 + 30 * 60),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let candidates = [TripCandidate {
+            trip_id: "night",
+            route_id: "rail",
+            trip: &trip,
+        }];
+        let scheduled: Timestamp = "2026-07-01T03:30:00Z".parse().unwrap();
+        let result = find_best_trip_match(&candidates, &scheduled, false, "1").unwrap();
+        assert_eq!(result.2, "20260630");
+        assert_eq!(result.3, 0);
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "via-rail-gtfsrt"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 description = "Converts Via Rail train tracker to a Vehicle and trip GTFS Realtime feed"
 license = "AGPL-3.0"
@@ -8,8 +8,7 @@ authors = ["Kyler Chin <kyler@catenarymaps.org>"]
 repository = "https://github.com/catenarytransit/via-rail-gtfsrt"
 
 [dependencies]
-chrono = "0.4.38"
-chrono-tz = "0.10.4"
+jiff = { version = "0.2.39", default-features = false, features = ["std", "serde"] }
 gtfs-realtime = "0.2.0"
 gtfs-structures = "0.46.1"
 reqwest = "0.12.5"
